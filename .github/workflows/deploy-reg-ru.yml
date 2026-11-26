@@ -1,0 +1,48 @@
+name: Deploy promo site to REG.RU
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reg-ru-promo-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Publish index.html
+        shell: bash
+        env:
+          SSH_HOST: ${{ vars.REG_SSH_HOST }}
+          SSH_PORT: ${{ vars.REG_SSH_PORT }}
+          SSH_USER: ${{ secrets.REG_SSH_USER }}
+          SSH_KEY: ${{ secrets.REG_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.REG_SSH_KNOWN_HOSTS }}
+        run: |
+          test -s index.html
+          : "${SSH_HOST:?Set REG_SSH_HOST}"
+          : "${SSH_USER:?Set REG_SSH_USER}"
+          : "${SSH_KEY:?Set REG_SSH_KEY}"
+          : "${SSH_KNOWN_HOSTS:?Set REG_SSH_KNOWN_HOSTS}"
+
+          umask 077
+          ssh_dir=$(mktemp -d)
+          trap 'rm -f -- "$ssh_dir/key" "$ssh_dir/known_hosts"; rmdir -- "$ssh_dir"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+
+          ssh -T -p "${SSH_PORT:-22}" -i "$ssh_dir/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -l "$SSH_USER" -- "$SSH_HOST" trend-buzuluk-deploy < index.html
