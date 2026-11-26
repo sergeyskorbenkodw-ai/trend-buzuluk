@@ -24,6 +24,8 @@ p,li{overflow-wrap:break-word}
 :focus-visible{outline:3px solid #787b31;outline-offset:4px}
 .wrap{width:92%;max-width:1280px;margin:0 auto}
 .section{padding:90px 0;padding:clamp(54px,9vw,122px) 0}
+.booking-search{padding:22px 0;background:var(--paper);border-bottom:1px solid var(--line)}
+#tl-search-form iframe{max-width:100%}
 .kicker{font-size:.75rem;font-weight:750;letter-spacing:.13em;text-transform:uppercase;margin:0 0 15px}
 .lead{font-size:1.13rem;max-width:66ch;color:var(--muted)}
 .button{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:11px 19px;border:1px solid transparent;border-radius:5px;background:var(--lime);color:var(--ink);text-decoration:none;font-weight:720;text-align:center;line-height:1.25;cursor:pointer}
@@ -118,6 +120,13 @@ dialog{max-width:min(95vw,1100px);max-height:92vh;padding:10px;border:0;backgrou
       <h1 id="hero-title">Отель и апартаменты в центре Бузулука</h1>
       <div class="actions"><a class="button " href="#rooms">Посмотреть номера</a><a class="button outline" href="#advantages">Наши преимущества</a></div>
       <ul class="hero-features"><li>Рейтинг 4,9 на Яндекс Картах</li><li>Номера и апартаменты с кухней</li><li>Тарифы на длительное проживание</li><li>Коворкинг и переговорная</li></ul>
+    </div>
+  </section>
+
+  <section class="booking-search" id="booking-search" aria-label="Поиск свободных номеров">
+    <div class="wrap">
+      <div id="tl-search-form"></div>
+      <a id="search-fallback" href="https://trendbuzuluk.ru/ru-ru/booking/">Проверить наличие номеров на сайте отеля →</a>
     </div>
   </section>
 
@@ -266,7 +275,7 @@ dialog{max-width:min(95vw,1100px);max-height:92vh;padding:10px;border:0;backgrou
       </div>
     </div>
   </section>
-  <section class="section offers" id="booking" aria-labelledby="booking-title">
+  <section class="section offers" id="booking" aria-labelledby="booking-title" hidden>
     <div class="wrap">
       <h2 id="booking-title">Бронирование номеров</h2>
       <p class="lead">Выберите даты заезда и выезда и укажите количество гостей. TravelLine покажет доступные номера и тарифы отеля Trend.</p>
@@ -285,20 +294,22 @@ dialog{max-width:min(95vw,1100px);max-height:92vh;padding:10px;border:0;backgrou
 (function () {
   var officialUrl = 'https://trendbuzuluk.ru/ru-ru/booking/';
   var fallback = document.getElementById('booking-fallback');
+  var searchFallback = document.getElementById('search-fallback');
   var status = document.getElementById('booking-status');
   var params = new URLSearchParams(window.location.search);
   var booking = document.getElementById('booking');
-  var started = false;
+  var showBooking = window.location.hash === '#booking' || params.has('room-type') || params.has('special-offer');
+  var mobile = /Android|iPhone|iPad|iPod|Mobile|IEMobile/i.test(navigator.userAgent);
+  var source = mobile ? 'BS-MOBILE_SITE' : '';
+  var language = params.get('lang') || 'ru';
+  var currency = params.get('currency') || 'RUB';
 
   function startBooking() {
-    if (started) return;
-    started = true;
     if (window.location.protocol === 'file:') {
       status.textContent = 'При открытии HTML-файла бронирование доступно по ссылке ниже.';
       status.hidden = false;
       return;
     }
-    var mobile = /Android|iPhone|iPad|iPod|Mobile|IEMobile/i.test(navigator.userAgent);
     var options = {
       gpPagePath: 'https://trendbuzuluk.ru/ru-ru/guest-account/',
       bfPagePath: window.location.pathname,
@@ -306,28 +317,61 @@ dialog{max-width:min(95vw,1100px);max-height:92vh;padding:10px;border:0;backgrou
       theme: 'express-amber',
       container: 'tl-booking-form',
       adults: '2',
-      language: params.get('lang') || 'ru',
+      language: language,
       languageRegion: null,
-      currency: params.get('currency') || 'RUB',
+      currency: currency,
       autoScroll: 'none',
       accommodationMode: 'auto',
-      source: mobile ? 'BS-MOBILE_SITE' : '',
+      source: source,
       defaultCitizenship: 'RUS'
     };
-    var travelLine = window.travelline = window.travelline || {};
-    var integration = travelLine.integration = travelLine.integration || {};
-    integration.__cq = (integration.__cq || []).concat([
+    loadTravelLine([
       ['setContext', 'TL-EXPRESS', 'ru'],
       ['embed', 'booking-form', options],
       ['embed', 'internet-access-monitor', Object.assign({}, options, {provider: 23189, enabled: true})]
     ]);
+  }
+
+  function startSearch() {
+    if (window.location.protocol === 'file:') return;
+    loadTravelLine([
+      ['setContext', 'TL-EXPRESS.express-new-aa', 'ru'],
+      ['embed', 'search-form', {
+        providers: [['23189']],
+        container: 'tl-search-form',
+        adults: '2',
+        nights: 1,
+        source: source,
+        language: language,
+        currency: currency,
+        oncomplete: function () { searchFallback.hidden = true; },
+        onsubmit: function (selection, url) {
+          var query = new URL(url, officialUrl).searchParams;
+          params.forEach(function (value, key) {
+            if (/^(utm_|yclid$|gclid$)/.test(key) && !query.has(key)) query.append(key, value);
+          });
+          var destination = new URL(window.location.href);
+          destination.search = query.toString();
+          destination.hash = 'booking';
+          return destination.href;
+        }
+      }]
+    ]);
+  }
+
+  function loadTravelLine(commands) {
+    var travelLine = window.travelline = window.travelline || {};
+    var integration = travelLine.integration = travelLine.integration || {};
+    integration.__cq = (integration.__cq || []).concat(commands);
     if (integration.__loader) return;
     integration.__loader = true;
     var hosts = ['ru-ibe.tlintegration.ru', 'ibe.tlintegration.ru', 'ibe.tlintegration.com'];
     function load(index) {
       if (index === hosts.length) {
-        status.textContent = 'Модуль не загрузился. Откройте бронирование на сайте отеля.';
-        status.hidden = false;
+        if (showBooking) {
+          status.textContent = 'Модуль не загрузился. Откройте бронирование на сайте отеля.';
+          status.hidden = false;
+        }
         return;
       }
       var script = document.createElement('script');
@@ -344,8 +388,12 @@ dialog{max-width:min(95vw,1100px);max-height:92vh;padding:10px;border:0;backgrou
   }
 
   document.querySelectorAll('a[href^="' + officialUrl + '"]').forEach(function (link) {
-    if (link === fallback) return;
+    if (link === fallback || link === searchFallback) return;
     var target = new URL(link.href);
+    if (!target.search) {
+      link.href = '#booking-search';
+      return;
+    }
     var nextParams = new URLSearchParams();
     params.forEach(function (value, key) {
       if (/^(utm_|yclid$|gclid$|lang$|currency$)/.test(key)) nextParams.append(key, value);
@@ -357,19 +405,16 @@ dialog{max-width:min(95vw,1100px);max-height:92vh;padding:10px;border:0;backgrou
       : '#booking';
   });
   fallback.href = officialUrl + window.location.search;
-  if (window.location.hash === '#booking' || params.has('room-type') || params.has('special-offer')) startBooking();
-  window.addEventListener('hashchange', function () {
-    if (window.location.hash === '#booking') startBooking();
-  });
-  if ('IntersectionObserver' in window) {
-    var observer = new IntersectionObserver(function (entries) {
-      if (!entries[0].isIntersecting) return;
-      observer.disconnect();
-      startBooking();
-    }, {rootMargin: '250px'});
-    observer.observe(booking);
-  } else {
+  if (showBooking) {
+    booking.hidden = false;
+    searchFallback.href = window.location.pathname + '#booking-search';
+    searchFallback.textContent = 'Изменить даты или количество гостей →';
     startBooking();
+  } else {
+    startSearch();
+    window.addEventListener('hashchange', function () {
+      if (window.location.hash === '#booking') window.location.reload();
+    });
   }
 }());
 </script>
